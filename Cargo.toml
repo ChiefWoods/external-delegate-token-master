@@ -29,3 +29,6 @@ solana-account = { version = "3.4.0" }
 solana-address = { version = "2.2.0", features = ["decode"] }
 solana-instruction = { version = "3.2.0", features = ["bincode"] }
 solana-pubkey = { version = "4.1.0" }
+k256 = { version = "0.13", features = ["ecdsa"] }
+sha3 = "0.11"
+alloy-primitives = { version = "1", features = ["k256"] }
