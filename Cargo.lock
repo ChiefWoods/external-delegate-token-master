@@ -2025,7 +2025,7 @@ dependencies = [
 [[package]]
 name = "quasar-derive"
 version = "0.0.0"
-source = "git+https://github.com/blueshift-gg/quasar?branch=master#37a531dc8561c1d2b500e926771b2c380be4460b"
+source = "git+https://github.com/blueshift-gg/quasar?branch=master#95c5d332c7b033065bc8213b2844371d610fcc9f"
 dependencies = [
  "proc-macro2",
  "quasar-schema",
@@ -2038,7 +2038,7 @@ dependencies = [
 [[package]]
 name = "quasar-lang"
 version = "0.0.0"
-source = "git+https://github.com/blueshift-gg/quasar?branch=master#37a531dc8561c1d2b500e926771b2c380be4460b"
+source = "git+https://github.com/blueshift-gg/quasar?branch=master#95c5d332c7b033065bc8213b2844371d610fcc9f"
 dependencies = [
  "const-crypto",
  "quasar-derive",
@@ -2056,7 +2056,7 @@ dependencies = [
 [[package]]
 name = "quasar-schema"
 version = "0.0.0"
-source = "git+https://github.com/blueshift-gg/quasar?branch=master#37a531dc8561c1d2b500e926771b2c380be4460b"
+source = "git+https://github.com/blueshift-gg/quasar?branch=master#95c5d332c7b033065bc8213b2844371d610fcc9f"
 dependencies = [
  "serde",
 ]
