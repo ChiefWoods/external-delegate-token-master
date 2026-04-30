@@ -2,7 +2,9 @@ use alloy_primitives::Address as EthAddress;
 use k256::ecdsa::SigningKey;
 use k256::elliptic_curve::rand_core::OsRng;
 use quasar_lang::prelude::SYSTEM_PROGRAM_ID;
-use quasar_svm::{token::create_keyed_system_account, Pubkey, QuasarSvm};
+use quasar_svm::{
+    token::create_keyed_system_account, ExecutionStatus, ProgramError, Pubkey, QuasarSvm,
+};
 use sha3::{Digest, Keccak256};
 use solana_address::Address;
 use solana_instruction::{AccountMeta, Instruction};
@@ -221,4 +223,182 @@ fn test_transfer_funds_by_central_authority() {
 
     assert_eq!(post_vault_balance, pre_vault_balance - amount / 10);
     assert_eq!(post_recipient_balance, pre_recipient_balance + amount / 10);
+}
+
+#[test]
+fn test_transfer_funds_with_invalid_authority() {
+    let mut svm = setup();
+
+    let authority = Pubkey::new_unique();
+    let invalid_authority = Pubkey::new_unique();
+    let recipient = Pubkey::new_unique();
+    let vault = derive_vault_address(authority);
+    let amount = LAMPORTS_PER_SOL;
+    let signing_key = SigningKey::random(&mut OsRng);
+    let eth_address: [u8; 20] =
+        EthAddress::from_public_key(signing_key.verifying_key()).into_array();
+
+    let result = svm.process_instruction(
+        &initialize_vault(authority, vault, eth_address),
+        &[
+            create_keyed_system_account(&authority, LAMPORTS_PER_SOL),
+            create_keyed_system_account(&vault, 0),
+        ],
+    );
+    result.assert_success();
+
+    set_vault_lamports(&mut svm, vault, amount);
+    let pre_recipient_balance = LAMPORTS_PER_SOL;
+
+    let (hash, recovery_id, signature) = sign_payload(&signing_key, b"transfer_funds:test");
+    let result = svm.process_instruction(
+        &transfer_instruction(
+            invalid_authority,
+            recipient,
+            vault,
+            amount / 10,
+            hash,
+            recovery_id,
+            signature,
+        ),
+        &[
+            create_keyed_system_account(&recipient, pre_recipient_balance),
+            create_keyed_system_account(&invalid_authority, LAMPORTS_PER_SOL),
+        ],
+    );
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_transfer_funds_with_invalid_vault() {
+    let mut svm = setup();
+
+    let authority = Pubkey::new_unique();
+    let recipient = Pubkey::new_unique();
+    let real_vault = derive_vault_address(authority);
+    let fake_vault = Pubkey::new_unique();
+    let amount = LAMPORTS_PER_SOL;
+    let signing_key = SigningKey::random(&mut OsRng);
+    let eth_address: [u8; 20] =
+        EthAddress::from_public_key(signing_key.verifying_key()).into_array();
+
+    let result = svm.process_instruction(
+        &initialize_vault(authority, real_vault, eth_address),
+        &[
+            create_keyed_system_account(&authority, LAMPORTS_PER_SOL),
+            create_keyed_system_account(&real_vault, 0),
+        ],
+    );
+    result.assert_success();
+
+    let mut vault_acc = svm.get_account(&real_vault).unwrap();
+    vault_acc.address = fake_vault;
+    svm.set_account(vault_acc);
+
+    let (hash, recovery_id, signature) = sign_payload(&signing_key, b"transfer_funds:test");
+    let result = svm.process_instruction(
+        &transfer_instruction(
+            authority,
+            recipient,
+            fake_vault,
+            amount / 10,
+            hash,
+            recovery_id,
+            signature,
+        ),
+        &[create_keyed_system_account(&recipient, LAMPORTS_PER_SOL)],
+    );
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_transfer_funds_with_invalid_eth_address() {
+    let mut svm = setup();
+
+    let authority = Pubkey::new_unique();
+    let recipient = Pubkey::new_unique();
+    let vault = derive_vault_address(authority);
+    let amount = LAMPORTS_PER_SOL;
+    let valid_signing_key = SigningKey::random(&mut OsRng);
+    let invalid_signing_key = SigningKey::random(&mut OsRng);
+    let eth_address: [u8; 20] =
+        EthAddress::from_public_key(valid_signing_key.verifying_key()).into_array();
+
+    let result = svm.process_instruction(
+        &initialize_vault(authority, vault, eth_address),
+        &[
+            create_keyed_system_account(&authority, LAMPORTS_PER_SOL),
+            create_keyed_system_account(&vault, 0),
+        ],
+    );
+    result.assert_success();
+
+    set_vault_lamports(&mut svm, vault, amount);
+    let pre_recipient_balance = LAMPORTS_PER_SOL;
+
+    let (hash, recovery_id, signature) = sign_payload(&invalid_signing_key, b"transfer_funds:test");
+    let result = svm.process_instruction(
+        &transfer_instruction(
+            authority,
+            recipient,
+            vault,
+            amount / 10,
+            hash,
+            recovery_id,
+            signature,
+        ),
+        &[create_keyed_system_account(
+            &recipient,
+            pre_recipient_balance,
+        )],
+    );
+
+    assert!(result.is_err());
+    assert!(svm.get_account(&recipient).is_none());
+}
+
+#[test]
+fn test_transfer_funds_with_insufficient_vault_funds() {
+    let mut svm = setup();
+
+    let authority = Pubkey::new_unique();
+    let recipient = Pubkey::new_unique();
+    let vault = derive_vault_address(authority);
+    let signing_key = SigningKey::random(&mut OsRng);
+    let eth_address: [u8; 20] =
+        EthAddress::from_public_key(signing_key.verifying_key()).into_array();
+
+    let result = svm.process_instruction(
+        &initialize_vault(authority, vault, eth_address),
+        &[
+            create_keyed_system_account(&authority, LAMPORTS_PER_SOL),
+            create_keyed_system_account(&vault, 0),
+        ],
+    );
+    result.assert_success();
+
+    let pre_vault_balance = svm.get_account(&vault).unwrap().lamports;
+    let pre_recipient_balance = LAMPORTS_PER_SOL;
+    let transfer_amount = pre_vault_balance + 1;
+
+    let (hash, recovery_id, signature) = sign_payload(&signing_key, b"transfer_funds:test");
+    let result = svm.process_instruction(
+        &transfer_instruction(
+            authority,
+            recipient,
+            vault,
+            transfer_amount,
+            hash,
+            recovery_id,
+            signature,
+        ),
+        &[create_keyed_system_account(
+            &recipient,
+            pre_recipient_balance,
+        )],
+    );
+
+    assert!(result.is_err());
 }
